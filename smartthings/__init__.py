@@ -184,20 +184,28 @@ class Thing:
 
 class Switch(Thing):
     def off(self):
-        return self._command("off")
+        r = self._command("off")
+        self.status["switch"] == "off"
+        return r
 
     def on(self):
-        return self._command("on")
+        r = self._command("on")
+        self.status["switch"] == "on"
+        return r
 
     def is_on(self):
         return self.status["switch"] == "on"
 
 class Lock(Thing):
     def lock(self):
-        return self._command("lock")
+        r = self._command("lock")
+        self.status["lock"] == "locked"
+        return r
 
     def unlock(self):
-        return self._command("unlock")
+        r =  self._command("unlock")
+        self.status["lock"] == "unlocked"
+        return r
 
 class PresenceSensor(Thing):
     pass
