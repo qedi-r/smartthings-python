@@ -139,10 +139,13 @@ class Connection:
             else:
                 raise Exception("Unknown device type %s" % (i['type']))
 
-    def getDevices(self):
+    def getDevices(self, filter_type=None):
         if self.devices == None:
             self.updateDevices()
-        return self.devices
+        if filter_type == None:
+            return self.devices
+        else:
+            return [val for key,val in self.devices.items() if type(val) is filter_type]
 
 class Thing:
     def __init__(self, connection, uuid, label):
@@ -151,13 +154,25 @@ class Thing:
         self.label = label
         self.status = ST_UNKNOWN 
 
+    def getId(self):
+        return self.uuid
+
+    def getName(self):
+        return self.label
+
     def getDevice(self):
         return self.connection._get("/device/%s" % self.uuid).json()
 
-    def getStatus(self):
+    def loadStatus(self):
         return self.connection._get("/device/%s/status" % self.uuid).json()
 
+    def getStatus(self):
+        if self.status == ST_UNKNOWN:
+            self.status = self.loadStatus()
+        return self.status
+
     def subscribe(self):
+        #TODO
         return self
 
     def _command(self, command, args=None):
@@ -174,8 +189,15 @@ class Switch(Thing):
     def on(self):
         return self._command("on")
 
+    def is_on(self):
+        return self.status["switch"] == "on"
+
 class Lock(Thing):
-    pass
+    def lock(self):
+        return self._command("lock")
+
+    def unlock(self):
+        return self._command("unlock")
 
 class PresenceSensor(Thing):
     pass
