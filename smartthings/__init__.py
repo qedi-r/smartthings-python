@@ -7,16 +7,16 @@ import logging
 
 import http.client
 
-http.client.HTTPConnection.debuglevel = 1
+#http.client.HTTPConnection.debuglevel = 1
 
 logging.basicConfig() # you need to initialize logging, otherwise you will not see anything from requests
 logging.getLogger().setLevel(logging.DEBUG)
-
+#
 smartthings_log = logging.getLogger("smartthings")
-
-requests_log = logging.getLogger("requests.packages.urllib3")
-requests_log.setLevel(logging.DEBUG)
-requests_log.propagate = True
+#
+#requests_log = logging.getLogger("requests.packages.urllib3")
+#requests_log.setLevel(logging.DEBUG)
+#requests_log.propagate = True
 
 ST_UNKNOWN = "UNKNOWN"
 
@@ -89,6 +89,10 @@ class Connection:
         return path
 
     def _get(self, path):
+        if not self.auth:
+            smartthings_log.log(logging.WARNING, "Not connected. Skipping request")
+            return
+
         if self.auth.app_uri == None:
             self.auth.app_uri = "https://%s/" % (SMARTTHINGS_LOGIN_HOSTNAME)
             r = self._get("/api/smartapps/endpoints")
@@ -105,6 +109,10 @@ class Connection:
         return r
 
     def _post(self, path, payload):
+        if not self.auth:
+            smartthings_log.log(logging.WARNING, "Not connected. Skipping request")
+            return
+
         path = self._path_sanitize(path)
 
         post_uri = "%s/%s" % ( self.auth.app_uri, path )
@@ -117,6 +125,57 @@ class Connection:
         r = requests.post(post_uri, headers=self.auth.getAuthHeader(), json=payload)
         r.raise_for_status()
         return r
+
+    def _delete(self, path, payload):
+        if not self.auth:
+            smartthings_log.log(logging.WARNING, "Not connected. Skipping request")
+            return
+
+        path = self._path_sanitize(path)
+
+        post_uri = "%s/%s" % ( self.auth.app_uri, path )
+        smartthings_log.log(logging.DEBUG, "Posting to: %s" % post_uri)
+        smartthings_log.log(logging.DEBUG, "Data: %s" % payload)
+
+        header_list = self.auth.getAuthHeader()
+        header_list["Content-Type"] = "application/json"
+
+        r = requests.delete(post_uri, headers=self.auth.getAuthHeader(), json=payload)
+        r.raise_for_status()
+        return r
+
+    def listSubscriptions(self):
+        # outputs all subscriptions known to this app instance. Could include other apps
+        #tied to the same account and same Smartthings app instance
+        subList = self._get('/subscriptions/').text
+        smartthings_log.log(logging.DEBUG, 'Subscriptions: %s' %  pprint.pformat(subList))
+        return subList
+
+    def addSubscription(self, cb_url):
+        # outputs all subscriptions known to this app instance. Could include other apps
+        #tied to the same account and same Smartthings app instance
+        payload = {"command": "subscribe"}
+        if cb_url:
+            payload["callback_url"] = cb_url
+            smartthings_log.log(logging.DEBUG, 'Adding Subscriptions: %s' %  pprint.pformat(cb_url))
+            return self._post("/subscriptions/", payload)
+        return None
+
+    def removeSubscription(self, cb_url):
+        # outputs all subscriptions known to this app instance. Could include other apps
+        #tied to the same account and same Smartthings app instance
+        payload = {"command": "unsubscribe"}
+        if cb_url:
+            payload["callback_url"] = cb_url
+            smartthings_log.log(logging.DEBUG, 'Deleting Subscriptions: %s' %  pprint.pformat(cb_url))
+            return self._delete("/subscriptions/", payload)
+        return None
+
+    def clearSubscriptions(self):
+        # outputs all subscriptions known to this app instance. Could include other apps
+        #tied to the same account and same Smartthings app instance
+        return self.removeSubscription("_all")
+
 
     def updateDevices(self):
         deviceList = self._get('/list').json()
@@ -147,6 +206,11 @@ class Connection:
         else:
             return [val for key,val in self.devices.items() if type(val) is filter_type]
 
+class EventUnexpectedDevice(Exception):
+    pass
+class EventMissingAttribute(Exception):
+    pass
+
 class Thing:
     def __init__(self, connection, uuid, label):
         self.connection = connection
@@ -171,9 +235,31 @@ class Thing:
             self.status = self.loadStatus()
         return self.status
 
-    def subscribe(self):
-        #TODO
-        return self
+    def _parseEvent(self, evt_json):
+        try:
+            evt = json.loads(evt_json)
+        except Exception as e:
+            smartthings_log.log(logging.ERROR, "event parse error: %s" % (e))
+            raise e
+
+        if ("device" not in evt
+                or "id" not in evt["device"]):
+            raise EventMissingAttribute()
+        if (evt["device"]["id"] != self.uuid):
+            raise EventUnexpectedDevice()
+
+        return evt
+
+    def updateState(self, evt_json):
+        pass
+
+    def subscribe(self, cb_url):
+        #TODO: individual subscriptions
+        pass
+        #payload = {"command": "subscribe"}
+        #if args:
+            #payload["callback_url"] = cb_url
+        #return self.connection._post("/subscriptions/", payload)
 
     def _command(self, command, args=None):
         payload = {"command": command}
@@ -185,26 +271,36 @@ class Thing:
 class Switch(Thing):
     def off(self):
         r = self._command("off")
-        self.status["switch"] == "off"
+        self.status = "off"
         return r
 
     def on(self):
         r = self._command("on")
-        self.status["switch"] == "on"
+        self.status= "on"
         return r
 
+    def updateState(self, evt_json):
+        try:
+            evt = self._parseEvent(evt_json)
+            if evt["event"] == "turningOff":
+                self.status= "off"
+            elif evt["event"] == "turningOn":
+                self.status = "on"
+        except:
+            smartthings_log.log(logging.ERROR, "Error updating state")
+
     def is_on(self):
-        return self.status["switch"] == "on"
+        return self.status == "on"
 
 class Lock(Thing):
     def lock(self):
         r = self._command("lock")
-        self.status["lock"] == "locked"
+        self.status = "locked"
         return r
 
     def unlock(self):
         r =  self._command("unlock")
-        self.status["lock"] == "unlocked"
+        self.status = "unlocked"
         return r
 
 class PresenceSensor(Thing):
