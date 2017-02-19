@@ -284,9 +284,10 @@ class Switch(Thing):
     def updateState(self, evt_json):
         try:
             evt = self._parseEvent(evt_json)
-            if evt["event"] == "turningOff":
+            smartthings_log.log(logging.DEBUG, "Updating state event: %s" % (evt["event"]))
+            if evt["event"] in ["turningOff", "off"]:
                 self.status["switch"] = STATUS_OFF
-            elif evt["event"] == "turningOn":
+            elif evt["event"] in ["turningOn", "on"]:
                 self.status["switch"] = STATUS_ON
         except:
             smartthings_log.log(logging.ERROR, "Error updating state")
