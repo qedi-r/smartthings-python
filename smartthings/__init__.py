@@ -18,7 +18,9 @@ smartthings_log = logging.getLogger("smartthings")
 #requests_log.setLevel(logging.DEBUG)
 #requests_log.propagate = True
 
-ST_UNKNOWN = "UNKNOWN"
+STATUS_UNKNOWN = "UNKNOWN"
+STATUS_ON = "on"
+STATUS_OFF = "off"
 
 class OAuthException(Exception):
     """ General OAuth Issues. See message for details """
@@ -182,7 +184,7 @@ class Connection:
 
         self.devices = {}
 
-        smartthings_log.log(logging.DEBUG, pprint.pformat(deviceList)) 
+        smartthings_log.log(logging.DEBUG, "devices:"+pprint.pformat(deviceList)) 
 
         for i in deviceList:
             if i["type"] == "switch":
@@ -216,7 +218,7 @@ class Thing:
         self.connection = connection
         self.uuid = uuid
         self.label = label
-        self.status = ST_UNKNOWN 
+        self.status = STATUS_UNKNOWN 
 
     def getId(self):
         return self.uuid
@@ -231,7 +233,7 @@ class Thing:
         return self.connection._get("/device/%s/status" % self.uuid).json()
 
     def getStatus(self):
-        if self.status == ST_UNKNOWN:
+        if self.status == STATUS_UNKNOWN:
             self.status = self.loadStatus()
         return self.status
 
@@ -270,27 +272,27 @@ class Thing:
 
 class Switch(Thing):
     def off(self):
-        r = self._command("off")
-        self.status = "off"
+        r = self._command(STATUS_OFF)
+        self.status["switch"] = STATUS_OFF
         return r
 
     def on(self):
-        r = self._command("on")
-        self.status= "on"
+        r = self._command(STATUS_ON)
+        self.status["switch"] = STATUS_ON
         return r
 
     def updateState(self, evt_json):
         try:
             evt = self._parseEvent(evt_json)
             if evt["event"] == "turningOff":
-                self.status= "off"
+                self.status["switch"] = STATUS_OFF
             elif evt["event"] == "turningOn":
-                self.status = "on"
+                self.status["switch"] = STATUS_ON
         except:
             smartthings_log.log(logging.ERROR, "Error updating state")
 
     def is_on(self):
-        return self.status == "on"
+        return self.status["switch"] == STATUS_ON
 
 class Lock(Thing):
     def lock(self):
