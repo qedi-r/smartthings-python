@@ -19,8 +19,12 @@ smartthings_log = logging.getLogger("smartthings")
 #requests_log.propagate = True
 
 STATUS_UNKNOWN = "UNKNOWN"
-STATUS_ON = "on"
+STATUS_LOCKED = "locked"
+STATUS_PRESENT = "present"
+STATUS_NOT_PRESENT = "not_present"
 STATUS_OFF = "off"
+STATUS_ON = "on"
+STATUS_UNLOCKED = "unlocked"
 
 class OAuthException(Exception):
     """ General OAuth Issues. See message for details """
@@ -191,7 +195,7 @@ class Connection:
                 self.devices[i["id"]] = Switch(self, i["id"], i["label"])
             elif i["type"] == "lock":
                 self.devices[i["id"]] = Lock(self, i["id"], i["label"])
-            elif i["type"] == "presenceSensor":
+            elif i["type"] in ["presenceSensor", "arrivalSensor"]:
                 self.devices[i["id"]] = PresenceSensor(self, i["id"], i["label"])
             elif i["type"] == "contactSensor":
                 self.devices[i["id"]] = ContactSensor(self, i["id"], i["label"])
@@ -206,7 +210,11 @@ class Connection:
         if filter_type == None:
             return self.devices
         else:
-            return [val for key,val in self.devices.items() if type(val) is filter_type]
+            filtered_list = []
+            for key,val in self.devices.items():
+                if isinstance(val, filter_type):
+                    filtered_list.append(val)
+            return filtered_list
 
 class EventUnexpectedDevice(Exception):
     pass
@@ -218,7 +226,7 @@ class Thing:
         self.connection = connection
         self.uuid = uuid
         self.label = label
-        self.status = STATUS_UNKNOWN 
+        self.status = {}
 
     def getId(self):
         return self.uuid
@@ -233,7 +241,8 @@ class Thing:
         return self.connection._get("/device/%s/status" % self.uuid).json()
 
     def getStatus(self):
-        if self.status == STATUS_UNKNOWN:
+        #status is the initial status
+        if self.status == {}:
             self.status = self.loadStatus()
         return self.status
 
@@ -281,6 +290,11 @@ class Switch(Thing):
         self.status["switch"] = STATUS_ON
         return r
 
+    def is_on(self):
+        if self.status:
+            return self.status["switch"] == STATUS_ON
+        return False
+
     def updateState(self, evt_json):
         try:
             evt = self._parseEvent(evt_json)
@@ -292,22 +306,38 @@ class Switch(Thing):
         except:
             smartthings_log.log(logging.ERROR, "Error updating state")
 
-    def is_on(self):
-        return self.status["switch"] == STATUS_ON
-
 class Lock(Thing):
     def lock(self):
         r = self._command("lock")
-        self.status = "locked"
+        self.status["lock"] = STATUS_LOCKED
         return r
 
     def unlock(self):
         r =  self._command("unlock")
-        self.status = "unlocked"
+        self.status["lock"] = STATUS_UNLOCKED
         return r
 
+    def is_locked(self):
+        if self.status:
+            return self.status["lock"] == STATUS_LOCKED
+        return False
+
+    def updateState(self, evt_json):
+        try:
+            evt = self._parseEvent(evt_json)
+            smartthings_log.log(logging.DEBUG, "Updating state event: %s" % (evt["event"]))
+            if evt["event"] in ["locking", "locked"]:
+                self.status["switch"] = STATUS_LOCKED
+            elif evt["event"] in ["unlocking", "unlocked"]:
+                self.status["switch"] = STATUS_UNLOCKED
+        except:
+            smartthings_log.log(logging.ERROR, "Error updating state")
+
 class PresenceSensor(Thing):
-    pass
+    def is_present(self):
+        if self.status:
+            return self.status["presenceSensor"] == STATUS_PRESENT
+        return False
 
 class ContactSensor(Thing):
     pass
